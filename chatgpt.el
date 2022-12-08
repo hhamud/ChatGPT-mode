@@ -33,50 +33,39 @@
 (defconst chatgpt-url-backend "https://chat.openai.com/backend-api/conversation"
   "ChatGPT backend API.")
 
-(defconst chatgpt-api "https://chat.openai.com/api"
-  "ChatGPT URL API.")
-
 (defconst chatgpt-env "~/Documents/projects/chatgpt-mode/.env"
   "Env file destination.")
 
 (defvar chatgpt-auth-token ""
   "Auth token.")
 
+(defvar chatgpt-session-token ""
+  "Session token.")
 ;;;; Functions
 (defun chatgpt-place-session-token (session-token)
   "Takes session_token input from browser cookies and stores it into .env file.
     and overwrites previous token if its old"
   (interactive "sInput session token:")
-  (write-region (format "SESSION_TOKEN=%s" session-token) nil chatgpt-env))
-
-(defun chatgpt--read-env-file (file-name)
-  "Read the contents of an .env file and return a list of (key . value) pairs."
-  (with-temp-buffer
-    (insert-file-contents file-name)
-    (goto-char (point-min))
-    (let (env-pairs)
-      (while (re-search-forward "^\\([^=\n]+\\)=\\(.+\\)" nil t)
-        (push (cons (match-string 1) (match-string 2)) env-pairs))
-      env-pairs)))
-
+  (setq chatgpt-session-token session-token))
 
 (defun chatgpt--conversation-headers (auth_token)
   "Constructs the header parameter for the POST request."
   (let ((headers
-          `(("Accept" . "application/json")
-          ("Authorization" . ,(format "Bearer %s" auth_token))
-          ("Content-Type" . "application/json"))))
+          `(("Authorization" . ,(format "Bearer %s" auth_token))
+          ("Content-Type" . "application/json")
+          ("user-agent" . chatgpt-user-agent)
+          )))
   headers))
 
-(defun chatgpt--conversation-data (prompt parent-message-id)
+(defun chatgpt--conversation-data (prompt)
   "Constructs the data parameter for the POST request."
   (let ((data `(("action" . "next")
                ("messages" . '(("id" . ,(shell-command-to-string "uuidgen"))
                                ("role" . "user")
-                               ("content" . '(("content-type" . "text")
-                                              ("parts" . ,prompt)))))
+                               ("content" . '(("content_type" . "text")
+                                              ("parts" . '(,prompt))))))
                ("model" . "text-davinci-002-render")
-               ("parent_message_id" . ,parent-message-id))))
+               ("parent_message_id" . ,(shell-command-to-string "uuidgen")))))
     data))
 
 (defun chatgpt--auth-headers (session-token)
@@ -85,11 +74,9 @@
     headers))
 
 (defun chatgpt--fetch-auth-token ()
-  (let* ((env (chatgpt--read-env-file chatgpt-env))
-        (session-token (cdr (assoc "SESSION_TOKEN" env))))
     (request chatgpt-url-auth
       :type "GET"
-      :headers (chatgpt--auth-headers session-token)
+      :headers (chatgpt--auth-headers chatgpt-session-token)
       :parser 'json-read
       :success (cl-function
                 (lambda (&key data &allow-other-keys)
@@ -97,21 +84,22 @@
                    (setq chatgpt-auth-token auth-token))))
       :error (cl-function
                 (lambda (&key data &allow-other-keys)
-                (print (format "Error: %s" data)))))))
+                (print (format "Error: %s" data))))))
 
 
 (defun chatgpt--construct-response (prompt)
   (chatgpt--fetch-auth-token)
   (request chatgpt-url-backend
   :type "POST"
-  :data (json-encode (chatgpt--conversation-data prompt "1"))
+  :data (json-encode (chatgpt--conversation-data prompt))
   :headers (chatgpt--conversation-headers chatgpt-auth-token)
   :parser 'json-read
+  :sync t
   :success (cl-function
-            (lambda (&rest data)
-              (message "I sent: %S" data)))
+            (lambda (&key data &allow-other-keys)
+              (message "%S" data)))
   :error (cl-function
-          (lambda (&rest data)
+          (lambda (&key data &allow-other-keys)
             (print (format "Error: %S" data))))))
 
 (defun chatgpt-fetch-response (prompt)
