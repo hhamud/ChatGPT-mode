@@ -36,11 +36,14 @@
 (defconst chatgpt-env "~/Documents/projects/chatgpt-mode/.env"
   "Env file destination.")
 
+;;;;;Tokens
 (defvar chatgpt-auth-token ""
   "Auth token.")
 
 (defvar chatgpt-session-token ""
   "Session token.")
+
+
 ;;;; Functions
 (defun chatgpt-place-session-token (session-token)
   "Takes session_token input from browser cookies and stores it into .env file.
@@ -48,10 +51,10 @@
   (interactive "sInput session token:")
   (setq chatgpt-session-token session-token))
 
-(defun chatgpt--conversation-headers (auth_token)
+(defun chatgpt--conversation-headers ()
   "Constructs the header parameter for the POST request."
   (let ((headers
-          `(("Authorization" . ,(format "Bearer %s" auth_token))
+          `(("Authorization" . ,(format "Bearer %s" chatgpt-auth-token))
           ("Content-Type" . "application/json")
           ("user-agent" . chatgpt-user-agent)
           )))
@@ -60,23 +63,23 @@
 (defun chatgpt--conversation-data (prompt)
   "Constructs the data parameter for the POST request."
   (let ((data `(("action" . "next")
-               ("messages" . '(("id" . ,(shell-command-to-string "uuidgen"))
+               ("messages" (("id" . ,(shell-command-to-string "uuidgen"))
                                ("role" . "user")
-                               ("content" . '(("content_type" . "text")
-                                              ("parts" . '(,prompt))))))
+                               ("content" . (("content_type" . "text")
+                                              ("parts" . ,(list prompt))))))
                ("model" . "text-davinci-002-render")
                ("parent_message_id" . ,(shell-command-to-string "uuidgen")))))
     data))
 
-(defun chatgpt--auth-headers (session-token)
-  (let ((headers `(("cookie" . ,(format "__Secure-next-auth.session-token=%s" session-token))
+(defun chatgpt--auth-headers ()
+  (let ((headers `(("cookie" . ,(format "__Secure-next-auth.session-token=%s" chatgpt-session-token))
                    ("user-agent" . ,chatgpt-user-agent))))
     headers))
 
 (defun chatgpt--fetch-auth-token ()
     (request chatgpt-url-auth
       :type "GET"
-      :headers (chatgpt--auth-headers chatgpt-session-token)
+      :headers (chatgpt--auth-headers )
       :parser 'json-read
       :success (cl-function
                 (lambda (&key data &allow-other-keys)
@@ -92,7 +95,7 @@
   (request chatgpt-url-backend
   :type "POST"
   :data (json-encode (chatgpt--conversation-data prompt))
-  :headers (chatgpt--conversation-headers chatgpt-auth-token)
+  :headers (chatgpt--conversation-headers )
   :parser 'json-read
   :sync t
   :success (cl-function
