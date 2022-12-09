@@ -21,6 +21,7 @@
 
 ;;;; packages
 (require 'request)
+(require 'json-mode)
 
 
 ;;;; Parameters
@@ -46,8 +47,7 @@
 
 ;;;; Functions
 (defun chatgpt-place-session-token (session-token)
-  "Takes session_token input from browser cookies and stores it into .env file.
-    and overwrites previous token if its old"
+  "Takes SESSION-TOKEN input from browser cookies."
   (interactive "sInput session token:")
   (setq chatgpt-session-token session-token))
 
@@ -56,27 +56,32 @@
   (let ((headers
           `(("Authorization" . ,(format "Bearer %s" chatgpt-auth-token))
           ("Content-Type" . "application/json")
-          ("user-agent" . chatgpt-user-agent)
-          )))
+          ("user-agent" . ,chatgpt-user-agent))))
   headers))
 
+(defun chatgpt--uuid ()
+  "Create UUID using shell."
+  (shell-command-to-string "printf %s \"$(uuidgen)\""))
+
 (defun chatgpt--conversation-data (prompt)
-  "Constructs the data parameter for the POST request."
+  "Constructs the body parameter for the POST request with PROMPT."
   (let ((data `(("action" . "next")
-               ("messages" (("id" . ,(shell-command-to-string "uuidgen"))
+               ("messages" (("id" . ,(chatgpt--uuid))
                                ("role" . "user")
                                ("content" . (("content_type" . "text")
                                               ("parts" . ,(list prompt))))))
                ("model" . "text-davinci-002-render")
-               ("parent_message_id" . ,(shell-command-to-string "uuidgen")))))
+               ("parent_message_id" . ,(chatgpt--uuid)))))
     data))
 
 (defun chatgpt--auth-headers ()
+  "Create the headers for the auth session."
   (let ((headers `(("cookie" . ,(format "__Secure-next-auth.session-token=%s" chatgpt-session-token))
                    ("user-agent" . ,chatgpt-user-agent))))
     headers))
 
 (defun chatgpt--fetch-auth-token ()
+  "Send the auth request to fetch the auth token."
     (request chatgpt-url-auth
       :type "GET"
       :headers (chatgpt--auth-headers )
@@ -86,31 +91,46 @@
                   (let ((auth-token (assoc-default 'accessToken data)))
                    (setq chatgpt-auth-token auth-token))))
       :error (cl-function
-                (lambda (&key data &allow-other-keys)
-                (print (format "Error: %s" data))))))
+                (lambda (&key error-thrown &allow-other-keys)
+                (print (format "Auth-Error: %s" error-thrown))))))
+
+
+(defun chatgpt--success ()
+  (cl-function
+   (lambda (&key data &allow-other-keys)
+     (when data
+      (with-current-buffer (get-buffer-create "*chatgpt*")
+        (erase-buffer)
+          (insert data)
+        (json-mode)
+        (pop-to-buffer (current-buffer)))))))
+
+
+(defun chatgpt--error ()
+  (cl-function
+  (lambda (&key error-thrown &allow-other-keys)
+        (print (format "Chat-Error: %s" error-thrown)))))
 
 
 (defun chatgpt--construct-response (prompt)
+  "Construct the final request response to the chatgpt servers with user PROMPT."
   (chatgpt--fetch-auth-token)
   (request chatgpt-url-backend
   :type "POST"
   :data (json-encode (chatgpt--conversation-data prompt))
   :headers (chatgpt--conversation-headers )
-  :parser 'json-read
-  :sync t
-  :success (cl-function
-            (lambda (&key data &allow-other-keys)
-              (message "%S" data)))
-  :error (cl-function
-          (lambda (&key data &allow-other-keys)
-            (print (format "Error: %S" data))))))
+  :parser 'buffer-string
+  :success (chatgpt--success)
+  :error (chatgpt--error) ))
 
-(defun chatgpt-fetch-response (prompt)
+
+(defun chatgpt-run (prompt)
+  "Fetches the response from the prompt (as PROMPT) given to ChatGPT."
   (interactive "sInput Prompt:")
   (chatgpt--construct-response prompt))
 
 ;; move these to README or the config file
-(global-set-key (kbd "C-c C-c b") 'chatgpt-fetch-response)
+(global-set-key (kbd "C-c C-c b") 'chatgpt-run)
 (global-set-key (kbd "C-c C-c c") 'chatgpt-place-session-token)
 
 (provide 'chatgpt)
