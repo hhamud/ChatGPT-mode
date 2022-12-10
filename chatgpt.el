@@ -21,7 +21,7 @@
 
 ;;;; packages
 (require 'request)
-(require 'json-mode)
+(require 'markdown-mode)
 
 
 ;;;; Parameters
@@ -54,10 +54,10 @@
 (defun chatgpt--conversation-headers ()
   "Constructs the header parameter for the POST request."
   (let ((headers
-          `(("Authorization" . ,(format "Bearer %s" chatgpt-auth-token))
-          ("Content-Type" . "application/json")
-          ("user-agent" . ,chatgpt-user-agent))))
-  headers))
+         `(("Authorization" . ,(format "Bearer %s" chatgpt-auth-token))
+           ("Content-Type" . "application/json")
+           ("user-agent" . ,chatgpt-user-agent))))
+    headers))
 
 (defun chatgpt--uuid ()
   "Create UUID using shell."
@@ -66,12 +66,12 @@
 (defun chatgpt--conversation-data (prompt)
   "Constructs the body parameter for the POST request with PROMPT."
   (let ((data `(("action" . "next")
-               ("messages" (("id" . ,(chatgpt--uuid))
-                               ("role" . "user")
-                               ("content" . (("content_type" . "text")
-                                              ("parts" . ,(list prompt))))))
-               ("model" . "text-davinci-002-render")
-               ("parent_message_id" . ,(chatgpt--uuid)))))
+                ("messages" (("id" . ,(chatgpt--uuid))
+                             ("role" . "user")
+                             ("content" . (("content_type" . "text")
+                                           ("parts" . ,(list prompt))))))
+                ("model" . "text-davinci-002-render")
+                ("parent_message_id" . ,(chatgpt--uuid)))))
     data))
 
 (defun chatgpt--auth-headers ()
@@ -82,46 +82,65 @@
 
 (defun chatgpt--fetch-auth-token ()
   "Send the auth request to fetch the auth token."
-    (request chatgpt-url-auth
-      :type "GET"
-      :headers (chatgpt--auth-headers )
-      :parser 'json-read
-      :success (cl-function
-                (lambda (&key data &allow-other-keys)
-                  (let ((auth-token (assoc-default 'accessToken data)))
-                   (setq chatgpt-auth-token auth-token))))
-      :error (cl-function
-                (lambda (&key error-thrown &allow-other-keys)
-                (print (format "Auth-Error: %s" error-thrown))))))
+  (request chatgpt-url-auth
+    :type "GET"
+    :headers (chatgpt--auth-headers )
+    :parser 'json-read
+    :success (cl-function
+              (lambda (&key data &allow-other-keys)
+                (let ((auth-token (assoc-default 'accessToken data)))
+                  (setq chatgpt-auth-token auth-token))))
+    :error (cl-function
+            (lambda (&key error-thrown &allow-other-keys)
+              (print (format "Auth-Error: %s" error-thrown))))))
+
+(defun chatgpt--md-to-org (text)
+  "Convert TEXT from markdown to org using pandoc."
+  (with-temp-buffer
+    (insert text)
+    (call-process-region (point-min) (point-max) "pandoc" t t nil "-f" "markdown" "-t" "org")
+    (goto-char (point-min))
+    (replace-regexp "begin_example" "BEGIN_SRC")
+    (goto-char (point-min))
+    (replace-regexp "end_example" "END_SRC")
+    (buffer-string)))
 
 
 (defun chatgpt--success ()
   (cl-function
    (lambda (&key data &allow-other-keys)
      (when data
-      (with-current-buffer (get-buffer-create "*chatgpt*")
-        (erase-buffer)
-          (insert data)
-        (json-mode)
-        (pop-to-buffer (current-buffer)))))))
+       (with-temp-buffer
+         (insert data)
+         (re-search-backward "data: \{")
+         (end-of-line)
+         (let* ((json-data
+                 (buffer-substring (+ (line-beginning-position) 5) (point)))
+                (json-string (json-read-from-string json-data))
+                (resp (cdr (assoc 'parts (cdr (assoc 'content (cdr (assoc 'message json-string))))))))
+           (with-current-buffer (get-buffer-create "*chatgpt*")
+             (erase-buffer)
+             (insert (chatgpt--md-to-org (substring (format "%s" resp) 1 -1)))
+             (org-mode)
+             (pop-to-buffer (current-buffer)))))))))
 
 
 (defun chatgpt--error ()
   (cl-function
-  (lambda (&key error-thrown &allow-other-keys)
-        (print (format "Chat-Error: %s" error-thrown)))))
+   (lambda (&key error-thrown &allow-other-keys)
+     (print (format "Chat-Error: %s" error-thrown)))))
 
 
 (defun chatgpt--construct-response (prompt)
   "Construct the final request response to the chatgpt servers with user PROMPT."
   (chatgpt--fetch-auth-token)
   (request chatgpt-url-backend
-  :type "POST"
-  :data (json-encode (chatgpt--conversation-data prompt))
-  :headers (chatgpt--conversation-headers )
-  :parser 'buffer-string
-  :success (chatgpt--success)
-  :error (chatgpt--error) ))
+    :type "POST"
+    :data (json-encode (chatgpt--conversation-data prompt))
+    :headers (chatgpt--conversation-headers )
+    :parser 'buffer-string
+    :success (chatgpt--success)
+    :error (chatgpt--error) ))
 
 
 (defun chatgpt-run (prompt)
@@ -135,4 +154,5 @@
 
 (provide 'chatgpt)
 ;;; chatgpt.el ends here
+
 
