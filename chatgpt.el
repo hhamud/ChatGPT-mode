@@ -1,7 +1,5 @@
 ;;; chatgpt.el --- Description -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2022 Hamza Hamud
-;;
 ;; Author: Hamza Hamud
 ;; Created: December 05, 2022
 ;; Modified: December 05, 2022
@@ -12,6 +10,7 @@
 ;;
 ;; This file is not part of GNU Emacs.
 ;;
+;;
 ;;; Commentary:
 ;;
 ;;  Description
@@ -21,7 +20,6 @@
 
 ;;;; packages
 (require 'request)
-(require 'markdown-mode)
 
 
 ;;;; Parameters
