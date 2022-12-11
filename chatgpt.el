@@ -34,9 +34,6 @@
 (defconst chatgpt-url-backend "https://chat.openai.com/backend-api/conversation"
   "ChatGPT backend API.")
 
-(defconst chatgpt-env "~/Documents/projects/chatgpt-mode/.env"
-  "Env file destination.")
-
 ;;;;;Tokens
 (defvar chatgpt-auth-token ""
   "Auth token.")
@@ -59,6 +56,7 @@
            ("user-agent" . ,chatgpt-user-agent))))
     headers))
 
+
 (defun chatgpt--uuid ()
   "Create UUID using shell."
   (shell-command-to-string "printf %s \"$(uuidgen)\""))
@@ -70,8 +68,9 @@
                              ("role" . "user")
                              ("content" . (("content_type" . "text")
                                            ("parts" . ,(list prompt))))))
+                ("parent_message_id" . ,(chatgpt--uuid))
                 ("model" . "text-davinci-002-render")
-                ("parent_message_id" . ,(chatgpt--uuid)))))
+                )))
     data))
 
 (defun chatgpt--auth-headers ()
@@ -81,6 +80,7 @@
     headers))
 
 (defun chatgpt--fetch-auth-token ()
+  (interactive)
   "Send the auth request to fetch the auth token."
   (request chatgpt-url-auth
     :type "GET"
@@ -91,8 +91,13 @@
                 (let ((auth-token (assoc-default 'accessToken data)))
                   (setq chatgpt-auth-token auth-token))))
     :error (cl-function
-            (lambda (&key error-thrown &allow-other-keys)
-              (print (format "Auth-Error: %s" error-thrown))))))
+            (lambda (&key data &key error-thrown &allow-other-keys)
+              (print (format "Auth-Error: %S, code: %S" (json-read-from-string data) error-thrown))))))
+
+
+(defun chatgpt-input-auth-token (auth-token)
+  (interactive "sInput Auth Token:")
+  (setq chatgpt-auth-token auth-token))
 
 (defun chatgpt--md-to-org (text)
   "Convert TEXT from markdown to org using pandoc."
@@ -127,13 +132,12 @@
 
 (defun chatgpt--error ()
   (cl-function
-   (lambda (&key error-thrown &allow-other-keys)
-     (print (format "Chat-Error: %s" error-thrown)))))
+   (lambda (&key data &key error-thrown &allow-other-keys)
+     (print (format "Chat-Error: %s, code: %s" (json-read-from-string data) error-thrown)))))
 
 
 (defun chatgpt--construct-response (prompt)
   "Construct the final request response to the chatgpt servers with user PROMPT."
-  (chatgpt--fetch-auth-token)
   (request chatgpt-url-backend
     :type "POST"
     :data (json-encode (chatgpt--conversation-data prompt))
@@ -148,9 +152,6 @@
   (interactive "sInput Prompt:")
   (chatgpt--construct-response prompt))
 
-;; move these to README or the config file
-(global-set-key (kbd "C-c C-c b") 'chatgpt-run)
-(global-set-key (kbd "C-c C-c c") 'chatgpt-place-session-token)
 
 (provide 'chatgpt)
 ;;; chatgpt.el ends here
