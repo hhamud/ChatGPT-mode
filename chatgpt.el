@@ -131,7 +131,7 @@
 (defun chatgpt--error ()
   (cl-function
    (lambda (&key data &key error-thrown &allow-other-keys)
-     (print (format "Chat-Error: %s, code: %s" (json-read-from-string data) error-thrown)))))
+     (print (format "Chat-Error: %s, code: %s" data error-thrown)))))
 
 
 (defun chatgpt--construct-response (prompt)
