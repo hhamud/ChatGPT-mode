@@ -13,3 +13,6 @@ As of 11/12/2022, OpenAI has added Cloudflare protections that make it more diff
 
 Therefore this wrapper is broken until I can find a way around that.
 
+# TODO
+- [ ] Add Contributing guidelines
+- [ ] [Update the package to match the new api](https://github.com/hhamud/ChatGPT-mode/issues/1)
